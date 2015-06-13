@@ -281,9 +281,10 @@ function purchaseUpgrades() {
 	var myGold = g_Minigame.CurrentScene().m_rgPlayerData.gold;
 	
 	//Initial values for   armor, dps, click damage 
-	var bestUpgradeForDamage,bestUpgradeForArmor;
+	var bestUpgradeForDamage,bestUpgradeForArmor,cheapestUpgradeForArmor;
 	var highestUpgradeValueForDamage = 0;
 	var highestUpgradeValueForArmor = 0;
+	var cheapestUpgradeCostForArmor = 0;
 	var bestElement = -1;
 	var highestElementLevel = 0;
 	
@@ -312,6 +313,10 @@ function purchaseUpgrades() {
 				if(upgrade.multiplier / upgradeCost > highestUpgradeValueForArmor) { // hp increase per moneys
 					bestUpgradeForArmor = i;
 					highestUpgradeValueForArmor = upgrade.multiplier / upgradeCost;
+				}
+				if (cheapestUpgradeCostForArmor < upgradeCost && upgradeCost < myGold) {
+					cheapestUpgradeForArmor = i;
+					cheapestUpgradeCostForArmor = upgradeCost;
 				}
 				break;
 			case UPGRADE_TYPES.CLICK_DAMAGE:
@@ -363,19 +368,28 @@ function purchaseUpgrades() {
 	var myMaxHealth = g_Minigame.CurrentScene().m_rgPlayerTechTree.max_hp;
 	// check if health is below 30%
 	var hpPercent = g_Minigame.CurrentScene().m_rgPlayerData.hp / myMaxHealth;
-	if (hpPercent < 0.3) {
+	var timeToDie = calculateTimeToDie();
+	if (hpPercent < 0.3 || timeToDie < 5) {
 		// Prioritize armor over damage
-		// - Should we by any armor we can afford or just wait for the best one possible?
-		//	 currently waiting
+		// Attempt to buy the armor of best value
 		upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestUpgradeForArmor].cost_for_next_level;
-		
+
 		if(myGold > upgradeCost && bestUpgradeForArmor) {
 			console.log("Buying " + upgrades[bestUpgradeForArmor].name);
 			buyUpgrade(bestUpgradeForArmor);
 			myGold = g_Minigame.CurrentScene().m_rgPlayerData.gold;
 		}
+		else if (timeToDie < 5 && hpPercent < 0.9) {
+			// If a quick death is possible, purchase the best armor available with current gold
+			if (cheapestUpgradeForArmor && myGold > cheapestUpgradeCostForArmor) {
+				console.log("Buying " + upgrades[cheapestUpgradeForArmor].name);
+				buyUpgrade(cheapestUpgradeForArmor);
+			}
+			// Don't spend on damage items until armor is better
+			return;
+		}
 	}
-	
+
 	// Try to buy some damage
 	upgradeCost = g_Minigame.CurrentScene().m_rgPlayerUpgrades[bestUpgradeForDamage].cost_for_next_level;
 
@@ -607,6 +621,18 @@ function useGoldRainIfRelevant() {
 			}
 		}
 	}
+}
+
+// Calculate how long it is possible to live with current enemy DPS
+function calculateTimeToDie() {
+	var scene = g_Minigame.CurrentScene();
+	var maxHp = scene.m_rgPlayerTechTree.max_hp;
+	var enemyDps = scene.m_rgGameData.lanes.reduce(function(max, lane) {
+		return Math.max(max, lane.enemies.reduce(function(sum, enemy) {
+			return sum + enemy.dps;
+		}, 0));
+	}, 0);
+	return maxHp / (enemyDps || scene.m_rgGameData.level * 4 || 1);
 }
 
 //If player is dead, call respawn method
